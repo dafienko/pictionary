@@ -1,38 +1,48 @@
 extern crate piston_window;
-extern crate find_folder;
+extern crate image as im;
 
 use piston_window::*;
 
 fn main() {
+    let size = 100;
     let mut window: PistonWindow = WindowSettings::new(
             "piston: hello_world",
-            [200, 200]
+            [size * 4; 2]
         )
         .exit_on_esc(true)
-        //.opengl(OpenGL::V2_1) // Set a different OpenGl version
+        .graphics_api(OpenGL::V4_1)
         .build()
         .unwrap();
 
-    let assets = find_folder::Search::ParentsThenKids(3, 3)
-        .for_folder("assets").unwrap();
-    println!("{:?}", assets);
-    let mut glyphs = window.load_font(assets.join("FiraSans-Regular.ttf")).unwrap();
+    let mut canvas = im::ImageBuffer::new(size, size);
+    let mut texture_context = TextureContext {
+        factory: window.factory.clone(),
+        encoder: window.factory.create_command_buffer().into()
+    };
+    let mut texture: G2dTexture = Texture::from_image(
+        &mut texture_context,
+        &canvas,
+        &TextureSettings::new().filter(Filter::Nearest)
+    ).unwrap();
 
     window.set_lazy(true);
+
     while let Some(e) = window.next() {
-        window.draw_2d(&e, |c, g, device| {
-            let transform = c.transform.trans(10.0, 100.0);
+        if e.render_args().is_some() {
+            texture.update(&mut texture_context, &canvas).unwrap();
+            window.draw_2d(&e, |c, g, device| {
+                texture_context.encoder.flush(device);
 
-            clear([1.0, 1.0, 1.0, 1.0], g);
-            text::Text::new_color([0.0, 0.0, 0.0, 1.0], 32).draw(
-                "Hello world!",
-                &mut glyphs,
-                &c.draw_state,
-                transform, g
-            ).unwrap();
+                clear([1.0; 4], g);
+                image(&texture, c.transform.scale(4.0, 4.0), g);
+            });
+        }
 
-            // Update glyphs before rendering.
-            glyphs.factory.encoder.flush(device);
-        });
+        if let Some(p) = e.mouse_cursor_args() {
+            let x = p[0] as u32;
+            let y = p[1] as u32;
+
+            canvas.put_pixel(x / 4, y / 4, im::Rgba([0, 0, 0, 255]));
+        }
     }
 }
