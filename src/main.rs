@@ -1,7 +1,12 @@
 extern crate piston_window;
 extern crate image as im;
 
+mod ts_dequeue;
+
+use std::thread;
+use std::sync::{Arc, Mutex};
 use piston_window::*;
+use ts_dequeue::TSDequeue;
 
 fn main() {
     let size = 100;
@@ -14,22 +19,38 @@ fn main() {
         .build()
         .unwrap();
 
-    let mut canvas = im::ImageBuffer::new(size, size);
+	let op_queue = Arc::new(TSDequeue::<[u32; 2]>::new());
+    let canvas = Arc::new(Mutex::new(
+		im::ImageBuffer::new(size, size)
+	));
+   
     let mut texture_context = TextureContext {
         factory: window.factory.clone(),
         encoder: window.factory.create_command_buffer().into()
     };
-    let mut texture: G2dTexture = Texture::from_image(
+    
+	let mut texture: G2dTexture = Texture::from_image(
         &mut texture_context,
-        &canvas,
+        &canvas.lock().unwrap(),
         &TextureSettings::new().filter(Filter::Nearest)
     ).unwrap();
 
     window.set_lazy(true);
 
+	let q = op_queue.clone();
+	let c = canvas.clone();
+	thread::spawn(move || {
+		loop {
+			if !q.is_empty() {
+				let [x, y] = q.pop();
+				c.lock().unwrap().put_pixel(x / 4, y / 4, im::Rgba([0, 0, 0, 255]));
+			}
+		}
+	});
+
     while let Some(e) = window.next() {
         if e.render_args().is_some() {
-            texture.update(&mut texture_context, &canvas).unwrap();
+            texture.update(&mut texture_context, &canvas.lock().unwrap()).unwrap();
             window.draw_2d(&e, |c, g, device| {
                 texture_context.encoder.flush(device);
 
@@ -42,7 +63,7 @@ fn main() {
             let x = p[0] as u32;
             let y = p[1] as u32;
 
-            canvas.put_pixel(x / 4, y / 4, im::Rgba([0, 0, 0, 255]));
+			op_queue.push([x, y]);
         }
     }
 }
