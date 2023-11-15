@@ -3,6 +3,8 @@ extern crate image as im;
 
 mod ts_dequeue;
 mod text_util;
+mod game;
+mod message;
 
 use piston_window::*;
 use ts_dequeue::TSDequeue;
@@ -90,9 +92,7 @@ fn main() {
         &TextureSettings::new().filter(Filter::Nearest)
     ).unwrap();
 
-	let assets = find_folder::Search::ParentsThenKids(3, 3)
-        .for_folder("assets").unwrap();
-    println!("{:?}", assets);
+	let assets = find_folder::Search::ParentsThenKids(3, 3).for_folder("assets").unwrap();
     let mut glyphs = window.load_font(assets.join("FiraSans-Regular.ttf")).unwrap();
 
 	let q = op_queue.clone();
@@ -122,12 +122,13 @@ fn main() {
 	});
 
 	let font = text::Text::new_color([0.0, 0.0, 0.0, 1.0], 32);
-	let mut mouse_down = true;
+	let mut mouse_down = false;
     while let Some(e) = window.next() {
         if e.render_args().is_some() {
             texture.update(&mut texture_context, &canvas.lock().unwrap()).unwrap();
             window.draw_2d(&e, |c, g, device| {
                 texture_context.encoder.flush(device);
+				glyphs.factory.encoder.flush(device);
 
                 clear([1.0; 4], g);
 
@@ -155,9 +156,6 @@ fn main() {
 						center_text("Guess Word", size as f64 * 2.0, 50.0);
 					}
 				}
-
-				// Update glyphs before rendering.
-				glyphs.factory.encoder.flush(device);
             });
         }
 
