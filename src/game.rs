@@ -1,24 +1,13 @@
 use std::net::{TcpStream, TcpListener};
 use std::env;
 
+use crate::canvas::GameCanvas;
 use crate::message::{GameMessage, parse_game_message};
 use piston_window::*;
-
-/*
-
-game = connect_players()
-
-init window
-
-message pump {
-	if let action {
-		game.process_action(action)
-	}
-
-	game.render()
-}
-
-*/
+use std::sync::mpsc::{channel, Sender};
+use std::thread;
+use std::sync::Mutex;
+use std::sync::Arc;
 
 pub enum GameAction {
 	Tick(),
@@ -28,10 +17,9 @@ pub enum GameAction {
 	Enter(),
 }
 
-
 trait Player {
-	fn render(self: &Self);
-	fn process_action(self: &Self, action: GameAction) -> Option<Box<dyn Player>>;
+	fn render(self: &Self, canvas: &mut GameCanvas, c: Context, g: &mut G2d, device: &mut gfx_device_gl::Device);
+	fn process_action(self: &Self, action: GameAction) -> Option<Box<dyn Player + Send>>;
 }
 
 enum Drawer {
@@ -41,11 +29,11 @@ enum Drawer {
 }
 
 impl Player for Drawer {
-	fn render(self: &Self) {
-
+	fn render(self: &Self, canvas: &mut GameCanvas, c: Context, g: &mut G2d, device: &mut gfx_device_gl::Device) {
+		canvas.center_text("Drawer", 200.0, 50.0, c, g);
 	}
 
-	fn process_action(self: &Self, action: GameAction) -> Option<Box<dyn Player>> {
+	fn process_action(self: &Self, action: GameAction) -> Option<Box<dyn Player + Send>> {
 
 		None
 	}
@@ -58,56 +46,78 @@ enum Guesser {
 }
 
 impl Player for Guesser {
-	fn render(self: &Self) {
-
+	fn render(self: &Self, canvas: &mut GameCanvas, c: Context, g: &mut G2d, device: &mut gfx_device_gl::Device) {
+		canvas.center_text("Guesser", 200.0, 50.0, c, g);
 	}
 
-	fn process_action(self: &Self, action: GameAction) -> Option<Box<dyn Player>> {
+	fn process_action(self: &Self, action: GameAction) -> Option<Box<dyn Player + Send>> {
 
 		None
 	}
 }
 
-pub struct Game {
-	stream: TcpStream,
-	role: Box<dyn Player>,
-
+struct EventState {
 	mouse_down: bool,
 }
 
+pub struct Game {
+	stream: TcpStream,
+	action_sender: Sender<GameAction>,
+	role: Box<dyn Player + Send>,
+	event_state: EventState,
+}
+
 impl Game {
-	pub fn new() -> Self {
+	pub fn new() -> Arc<Mutex<Self>> {
 		let args: Vec<String> = env::args().collect();
-		let res = if args.len() >= 2 {
+		let (stream, role) = if args.len() >= 2 {
 			let ip = args.get(1).unwrap();
 			println!("connecting to {}...", ip);
-			(TcpStream::connect(ip).unwrap(), Box::new(Guesser::Init) as Box<dyn Player>)
+			(TcpStream::connect(ip).unwrap(), Box::new(Guesser::Init) as Box<dyn Player + Send>)
 		} else {
 			println!("waiting for connection...");
-			(TcpListener::bind("127.0.0.1:4912").unwrap().accept().unwrap().0, Box::new(Drawer::Init) as Box<dyn Player>)
+			(TcpListener::bind("127.0.0.1:4912").unwrap().accept().unwrap().0, Box::new(Drawer::Init) as Box<dyn Player + Send>)
 		};
 
-		Game {
-			stream: res.0,
-			role: res.1,
-			mouse_down: false,
-		}
-	}
+		let mut reader = stream.try_clone().unwrap();
+		let (sender, receiver) = channel();
 
-	fn process_message(&self, message: GameMessage) {
-		match message {
-			GameMessage::PutPixel(x, y) => {
-				
+		let this = Arc::new(Mutex::new(Game {
+			stream,
+			action_sender: sender,
+			role,
+			event_state: EventState {
+				mouse_down: false
 			}
+		}));
+
+		let tcp_thread_ref = this.clone();
+		thread::spawn(move || {
+			loop {
+				let message = parse_game_message(&mut reader);
+				tcp_thread_ref.lock().unwrap().push(Game::translate_message(message));
+			}
+		});
+		
+		let action_thread_ref = this.clone();
+		thread::spawn(move || {
+			loop {
+				let action = receiver.recv().unwrap();
+				action_thread_ref.lock().unwrap().process_action(action);
+			}
+		});	
+
+		this
+	}
+
+	fn translate_message(message: GameMessage) -> GameAction {
+		match message {
+			GameMessage::PutPixel(x, y) => GameAction::Draw(x, y)
 		}
 	}
 
-	pub fn start_message_listener(&self) {
-		let mut reader = self.stream.try_clone().unwrap();
-		loop {
-			let message = parse_game_message(&mut reader);
-			self.process_message(message);
-		}
+	fn push(&self, action: GameAction) {
+		self.action_sender.send(action).unwrap();
 	}
 
 	pub fn process_action(&mut self, action: GameAction) {
@@ -117,11 +127,12 @@ impl Game {
 	}
 
 	pub fn process_event(&mut self, e: Event) {
-		if self.mouse_down {
+		if self.event_state.mouse_down {
 			if let Some(p) = e.mouse_cursor_args() {
 				let x = p[0] as u32;
 				let y = p[1] as u32;
-				self.process_action(GameAction::Draw(x, y));
+
+				self.push(GameAction::Draw(x, y));
 			}
 		}
 
@@ -129,7 +140,7 @@ impl Game {
 			if let Input::Button(args) = input {
 				if let Button::Mouse(mouse_button) = args.button {
 					if let MouseButton::Left = mouse_button {
-						self.mouse_down = match args.state {
+						self.event_state.mouse_down = match args.state {
 							ButtonState::Press => true,
 							ButtonState::Release => false,
 						}
@@ -139,15 +150,12 @@ impl Game {
 		}
 	}
 
-	pub fn render(&self, c: Context, g: &mut G2d, d: &mut gfx_device_gl::Device) {
-		self.role.render();
+	pub fn render(&self, canvas: &mut GameCanvas, c: Context, g: &mut G2d, device: &mut gfx_device_gl::Device) {
+		self.role.render(canvas, c, g, device);
+		
+		
+		
 		/*
-		texture_context.encoder.flush(device);
-				glyphs.factory.encoder.flush(device);
-
-                clear([1.0; 4], g);
-
-                image(&texture, c.transform.scale(4.0, 4.0), g);
 
 				let mut center_text = |render_text: &str, x: f64, y: f64| {
 					let w = metrics(&font, render_text, &mut glyphs);

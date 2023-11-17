@@ -1,7 +1,5 @@
-use std::io::{prelude, Read, Write};
+use std::io::{Read, Write};
 use std::net::TcpStream;
-
-use crate::parse_bytes;
 
 const PUT_PIXEL_MESSAGE_ID: u8 = 0x00u8;
 
@@ -19,8 +17,8 @@ pub fn parse_game_message(stream: &mut TcpStream) -> GameMessage {
 			stream.read_exact(&mut bytes).unwrap();
 
 			GameMessage::PutPixel(
-				parse_bytes(&bytes[0..4]), 
-				parse_bytes(&bytes[4..8])
+				u32_from_bytes(&bytes[0..4]), 
+				u32_from_bytes(&bytes[4..8])
 			)
 		}
 		_ => panic!("unexpected message id, {}", id[0])
