@@ -2,6 +2,7 @@ use std::net::{TcpStream, TcpListener};
 use std::env;
 
 use crate::message::{GameMessage, parse_game_message};
+use piston_window::*;
 
 /*
 
@@ -70,6 +71,8 @@ impl Player for Guesser {
 pub struct Game {
 	stream: TcpStream,
 	role: Box<dyn Player>,
+
+	mouse_down: bool,
 }
 
 impl Game {
@@ -87,6 +90,7 @@ impl Game {
 		Game {
 			stream: res.0,
 			role: res.1,
+			mouse_down: false,
 		}
 	}
 
@@ -106,7 +110,36 @@ impl Game {
 		}
 	}
 
-	pub fn render(&self) {
+	pub fn process_action(&mut self, action: GameAction) {
+		if let Some(new) = self.role.process_action(action) {
+			self.role = new;
+		};
+	}
+
+	pub fn process_event(&mut self, e: Event) {
+		if self.mouse_down {
+			if let Some(p) = e.mouse_cursor_args() {
+				let x = p[0] as u32;
+				let y = p[1] as u32;
+				self.process_action(GameAction::Draw(x, y));
+			}
+		}
+
+		if let Event::Input(input, _) = e.clone() {
+			if let Input::Button(args) = input {
+				if let Button::Mouse(mouse_button) = args.button {
+					if let MouseButton::Left = mouse_button {
+						self.mouse_down = match args.state {
+							ButtonState::Press => true,
+							ButtonState::Release => false,
+						}
+					}
+				}
+			}
+		}
+	}
+
+	pub fn render(&self, c: Context, g: &mut G2d, d: &mut gfx_device_gl::Device) {
 		self.role.render();
 		/*
 		texture_context.encoder.flush(device);
@@ -126,12 +159,6 @@ impl Game {
 					).unwrap();
 				};
 		 */
-	}
-
-	pub fn process_event(&mut self, action: GameAction) {
-		if let Some(new) = self.role.process_action(action) {
-			self.role = new;
-		};
 	}
 }
 

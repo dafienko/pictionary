@@ -69,4 +69,8 @@ impl GameCanvas<'_> {
 			}
 		}
 	}
+
+	pub fn pre_render(&self) {
+		self.texture.update(&mut self.texture_context, &self.canvas.lock().unwrap()).unwrap();
+	}
 }

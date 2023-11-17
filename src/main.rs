@@ -9,12 +9,10 @@ mod canvas;
 
 use piston_window::*;
 use std::{env, thread, vec};
-use std::sync::{Arc, Mutex};
 use std::net::{TcpStream, TcpListener};
 
 use crate::canvas::GameCanvas;
 use crate::game::Game;
-use crate::text_util::metrics;
 
 fn add_bytes(vec: &mut Vec<u8>, x: u32) {
     vec.push(((x >> 24) & 0xff) as u8);
@@ -77,51 +75,23 @@ fn main() {
 
 	let canvas = GameCanvas::new(&window, size, size);
 
-	thread::spawn(|| { 
+	thread::spawn(move || { 
 		canvas.process_operation_queue();
 	});
 
-	thread::spawn(|| {
+	thread::spawn(move || {
 		game.start_message_listener();
 	});
 
-	let mut mouse_down = false;
     while let Some(e) = window.next() {
         if e.render_args().is_some() {
-            texture.update(&mut texture_context, &canvas.lock().unwrap()).unwrap();
-            window.draw_2d(&e, |c, g, device| {
-                
+            canvas.pre_render();
 
-				
+            window.draw_2d(&e, |c, g, device| {
+                game.render(c, g, device);				
             });
         }
 
-		if let Event::Input(input, _) = e.clone() {
-			if let Input::Button(args) = input {
-				if let Button::Mouse(mouse_button) = args.button {
-					if let MouseButton::Left = mouse_button {
-						mouse_down = match args.state {
-							ButtonState::Press => true,
-							ButtonState::Release => false,
-						}
-					}
-				}
-			}
-		}
-
-		if mouse_down {
-			if let Some(p) = e.mouse_cursor_args() {
-				if let Role::Drawer(_) = my_role {
-					let x = p[0] as u32;
-					let y = p[1] as u32;
-					op_queue.push([x, y, 255, 0, 0]);
-
-					let mut bytes = vec![];
-					add_bytes(&mut bytes, x);
-					add_bytes(&mut bytes, y);
-					stream.write(&bytes[..]).unwrap();
-				};
-			}
-		}
+		game.process_event(e)
     }
 }
