@@ -356,6 +356,64 @@ impl Player for WaitingPlayer {
 	fn process_action(self: &Self, _communications: &mut Communications, _action: GameAction) -> Option<Box<dyn Player + Send>> { None }
 }
 
+enum KeyboardButtonType {
+	Letter(char),
+	Number(u8),
+	Enter,
+	Backspace,
+	Other
+}
+
+impl KeyboardButtonType {
+	fn from_key(key: Key) -> KeyboardButtonType {
+		match key {
+			Key::A => KeyboardButtonType::Letter('a'),
+			Key::B => KeyboardButtonType::Letter('b'),
+			Key::C => KeyboardButtonType::Letter('c'),
+			Key::D => KeyboardButtonType::Letter('d'),
+			Key::E => KeyboardButtonType::Letter('e'),
+			Key::F => KeyboardButtonType::Letter('f'),
+			Key::G => KeyboardButtonType::Letter('g'),
+			Key::H => KeyboardButtonType::Letter('h'),
+			Key::I => KeyboardButtonType::Letter('i'),
+			Key::J => KeyboardButtonType::Letter('j'),
+			Key::K => KeyboardButtonType::Letter('k'),
+			Key::L => KeyboardButtonType::Letter('l'),
+			Key::M => KeyboardButtonType::Letter('m'),
+			Key::N => KeyboardButtonType::Letter('n'),
+			Key::O => KeyboardButtonType::Letter('o'),
+			Key::P => KeyboardButtonType::Letter('p'),
+			Key::Q => KeyboardButtonType::Letter('q'),
+			Key::R => KeyboardButtonType::Letter('r'),
+			Key::S => KeyboardButtonType::Letter('s'),
+			Key::T => KeyboardButtonType::Letter('t'),
+			Key::U => KeyboardButtonType::Letter('u'),
+			Key::V => KeyboardButtonType::Letter('v'),
+			Key::W => KeyboardButtonType::Letter('w'),
+			Key::X => KeyboardButtonType::Letter('x'),
+			Key::Y => KeyboardButtonType::Letter('y'),
+			Key::Z => KeyboardButtonType::Letter('z'),
+
+			Key::D0 => KeyboardButtonType::Number(0),
+			Key::D1 => KeyboardButtonType::Number(1),
+			Key::D2 => KeyboardButtonType::Number(2),
+			Key::D3 => KeyboardButtonType::Number(3),
+			Key::D4 => KeyboardButtonType::Number(4),
+			Key::D5 => KeyboardButtonType::Number(5),
+			Key::D6 => KeyboardButtonType::Number(6),
+			Key::D7 => KeyboardButtonType::Number(7),
+			Key::D8 => KeyboardButtonType::Number(8),
+			Key::D9 => KeyboardButtonType::Number(9),
+
+			Key::Return => KeyboardButtonType::Enter,
+
+			Key::Backspace => KeyboardButtonType::Backspace,
+
+			_ => KeyboardButtonType::Other,
+		}
+	}
+}
+
 struct EventState {
 	left_mouse_down: bool,
 	right_mouse_down: bool,
@@ -365,20 +423,97 @@ struct Communications {
 	stream: TcpStream,
 	action_sender: Sender<GameAction>,
 	canvas_op_sender: Sender<CanvasOperation>,
-}
-
-pub struct Game {
-	communications: Option<Communications>,
-	role: Box<dyn Player + Send>,
 	event_state: EventState,
 }
 
-enum KeyboardButtonType {
-	Letter(char),
-	Number(u8),
-	Enter,
-	Backspace,
-	Other
+impl Communications {
+	fn process_keyboard_button_event(&mut self, keyboard_button_type: KeyboardButtonType) {
+		match keyboard_button_type {
+			KeyboardButtonType::Letter(char) => {
+				self.action_sender.send(GameAction::TypeLetter(char)).unwrap();
+			},
+
+			KeyboardButtonType::Number(num) => {
+				self.action_sender.send(GameAction::TypeNumber(num)).unwrap();
+			},
+
+			KeyboardButtonType::Enter => {
+				self.action_sender.send(GameAction::Enter).unwrap();
+			},
+
+			KeyboardButtonType::Backspace => {
+				self.action_sender.send(GameAction::DeleteLetter).unwrap();
+			},
+
+			_ => {}
+		};
+	}
+
+	fn process_button_event(&mut self, args: ButtonArgs) {
+		match args.button {
+			Button::Keyboard(key) => {
+				if let ButtonState::Press = args.state {
+					self.process_keyboard_button_event(KeyboardButtonType::from_key(key));
+				}
+			},
+
+			Button::Mouse(mouse_button) => {
+				let state = match args.state {
+					ButtonState::Press => true,
+					ButtonState::Release => false,
+				};
+				
+				match mouse_button {
+					MouseButton::Left => {
+						self.event_state.left_mouse_down = state;
+					},
+					
+					MouseButton::Right => {
+						self.event_state.right_mouse_down = state;
+					},
+					
+					_ => {}
+				};
+			},
+			
+			_ => {}
+		}
+	}
+
+	pub fn process_event(&mut self, e: Event) {
+		if let Some(p) = e.mouse_cursor_args() {
+			let x = (p[0] as u32) / 8;
+			let y = (p[1] as u32) / 8;
+
+			if self.event_state.left_mouse_down {
+				self.action_sender.send(GameAction::LeftClick(x, y)).unwrap();
+			} 
+
+			if self.event_state.right_mouse_down {
+				self.action_sender.send(GameAction::RightClick(x, y)).unwrap();
+			} 
+		}
+
+		match e {
+			Event::Input(input, _) => {
+				if let Input::Button(args) = input {
+					self.process_button_event(args);
+				};
+			},
+
+			Event::Loop(loop_event) => {
+				if let Loop::Update(update_args) = loop_event {
+					self.action_sender.send(GameAction::Update(update_args.dt)).unwrap();
+				}
+			}
+			_ => {},
+		};
+	}
+}
+
+pub struct Game {
+	role: Box<dyn Player + Send>,
+	communications: Option<Communications>,
 }
 
 impl Game {
@@ -393,12 +528,8 @@ impl Game {
 
 		let (sender, receiver) = channel();
 		let this = Arc::new(Mutex::new(Game {
-			communications: None,
 			role: Box::new(WaitingPlayer { address: address.clone() }),
-			event_state: EventState {
-				left_mouse_down: false,
-				right_mouse_down: false,
-			}
+			communications: None,
 		}));
 
 		let connection_thread_ref = this.clone();
@@ -414,7 +545,11 @@ impl Game {
 			connection_thread_ref.lock().unwrap().communications = Some(Communications {
 				stream: stream, 
 				action_sender: sender, 
-				canvas_op_sender
+				canvas_op_sender,
+				event_state: EventState {
+					left_mouse_down: false,
+					right_mouse_down: false,
+				}
 			});
 
 			connection_thread_ref.lock().unwrap().role = role;
@@ -476,122 +611,7 @@ impl Game {
 
 	pub fn process_event(&mut self, e: Event) {
 		if let Some(communications) = &mut self.communications {
-			if let Some(p) = e.mouse_cursor_args() {
-				let x = (p[0] as u32) / 8;
-				let y = (p[1] as u32) / 8;
-
-				if self.event_state.left_mouse_down {
-					communications.action_sender.send(GameAction::LeftClick(x, y)).unwrap();
-				} 
-
-				if self.event_state.right_mouse_down {
-					communications.action_sender.send(GameAction::RightClick(x, y)).unwrap();
-				} 
-			}
-
-			match e {
-				Event::Input(input, _) => {
-					if let Input::Button(args) = input {
-						match args.button {
-							Button::Keyboard(key) => {
-								if let ButtonState::Press = args.state {
-									let keyboard_button: KeyboardButtonType = match key {
-										Key::A => KeyboardButtonType::Letter('a'),
-										Key::B => KeyboardButtonType::Letter('b'),
-										Key::C => KeyboardButtonType::Letter('c'),
-										Key::D => KeyboardButtonType::Letter('d'),
-										Key::E => KeyboardButtonType::Letter('e'),
-										Key::F => KeyboardButtonType::Letter('f'),
-										Key::G => KeyboardButtonType::Letter('g'),
-										Key::H => KeyboardButtonType::Letter('h'),
-										Key::I => KeyboardButtonType::Letter('i'),
-										Key::J => KeyboardButtonType::Letter('j'),
-										Key::K => KeyboardButtonType::Letter('k'),
-										Key::L => KeyboardButtonType::Letter('l'),
-										Key::M => KeyboardButtonType::Letter('m'),
-										Key::N => KeyboardButtonType::Letter('n'),
-										Key::O => KeyboardButtonType::Letter('o'),
-										Key::P => KeyboardButtonType::Letter('p'),
-										Key::Q => KeyboardButtonType::Letter('q'),
-										Key::R => KeyboardButtonType::Letter('r'),
-										Key::S => KeyboardButtonType::Letter('s'),
-										Key::T => KeyboardButtonType::Letter('t'),
-										Key::U => KeyboardButtonType::Letter('u'),
-										Key::V => KeyboardButtonType::Letter('v'),
-										Key::W => KeyboardButtonType::Letter('w'),
-										Key::X => KeyboardButtonType::Letter('x'),
-										Key::Y => KeyboardButtonType::Letter('y'),
-										Key::Z => KeyboardButtonType::Letter('z'),
-		
-										Key::D0 => KeyboardButtonType::Number(0),
-										Key::D1 => KeyboardButtonType::Number(1),
-										Key::D2 => KeyboardButtonType::Number(2),
-										Key::D3 => KeyboardButtonType::Number(3),
-										Key::D4 => KeyboardButtonType::Number(4),
-										Key::D5 => KeyboardButtonType::Number(5),
-										Key::D6 => KeyboardButtonType::Number(6),
-										Key::D7 => KeyboardButtonType::Number(7),
-										Key::D8 => KeyboardButtonType::Number(8),
-										Key::D9 => KeyboardButtonType::Number(9),
-		
-										Key::Return => KeyboardButtonType::Enter,
-
-										Key::Backspace => KeyboardButtonType::Backspace,
-
-										_ => KeyboardButtonType::Other,
-									};
-							
-									match keyboard_button {
-										KeyboardButtonType::Letter(char) => {
-											communications.action_sender.send(GameAction::TypeLetter(char)).unwrap();
-										},
-
-										KeyboardButtonType::Number(num) => {
-											communications.action_sender.send(GameAction::TypeNumber(num)).unwrap();
-										},
-
-										KeyboardButtonType::Enter => {
-											communications.action_sender.send(GameAction::Enter).unwrap();
-										},
-
-										KeyboardButtonType::Backspace => {
-											communications.action_sender.send(GameAction::DeleteLetter).unwrap();
-										},
-										_ => {}
-									};
-								}
-							},
-
-							Button::Mouse(mouse_button) => {
-								let state = match args.state {
-									ButtonState::Press => true,
-									ButtonState::Release => false,
-								};
-
-								match mouse_button {
-									MouseButton::Left => {
-										self.event_state.left_mouse_down = state;
-									},
-
-									MouseButton::Right => {
-										self.event_state.right_mouse_down = state;
-									},
-
-									_ => {}
-								};
-							},
-							_ => {}
-						}
-					};
-				},
-
-				Event::Loop(loop_event) => {
-					if let Loop::Update(update_args) = loop_event {
-						communications.action_sender.send(GameAction::Update(update_args.dt)).unwrap();
-					}
-				}
-				_ => {},
-			};
+			communications.process_event(e)
 		}
 	}
 
@@ -599,4 +619,3 @@ impl Game {
 		self.role.render(font, glyphs, c, g, device);
 	}
 }
-
