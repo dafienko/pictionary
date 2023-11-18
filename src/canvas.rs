@@ -1,7 +1,7 @@
 extern crate piston_window;
 extern crate image as im;
 
-use std::{sync::{Arc, Mutex}, thread};
+use std::{sync::{Arc, Mutex}, thread, cmp};
 use std::sync::mpsc::{channel, Sender};
 use gfx_device_gl::{Factory, Resources, CommandBuffer};
 
@@ -10,6 +10,8 @@ use im::Rgba;
 
 pub enum CanvasOperation {
 	Pixel(u32, u32, u8, u8, u8),
+	Erase(u32, u32),
+	Clear,
 }
 
 pub struct GameCanvas {
@@ -41,7 +43,7 @@ impl GameCanvas {
 		thread::spawn(move || {
 			loop {
 				let operation = receiver.recv().unwrap();
-				GameCanvas::process_operation(&mut c.lock().unwrap(), operation);
+				GameCanvas::process_operation(&mut c.lock().unwrap(), width, height, operation);
 			}
 		});
 		
@@ -49,14 +51,31 @@ impl GameCanvas {
 			op_sender: sender,
 			canvas: canvas,
 			texture_context: texture_context,
-			texture: texture,
+			texture: texture
 		}
 	}
 
-	fn process_operation(c: &mut im::ImageBuffer<Rgba<u8>, Vec<u8>>, operation: CanvasOperation) {
+	fn process_operation(c: &mut im::ImageBuffer<Rgba<u8>, Vec<u8>>, width: u32, height: u32, operation: CanvasOperation) {
 		match operation {
 			CanvasOperation::Pixel(x, y, r, g, b) => {
 				c.put_pixel(x, y, im::Rgba([r, g, b, 255]));
+			},
+
+			CanvasOperation::Erase(x, y) => {
+				let s = 2;
+				for x in cmp::max(0, x - s)..cmp::min(x + s + 1, width) {
+					for y in cmp::max(0, y - 1)..cmp::min(y + 2, height) {
+						c.put_pixel(x, y, im::Rgba([255, 255, 255, 255]));
+					}
+				}
+			},
+
+			CanvasOperation::Clear => {
+				for x in 0..width {
+					for y in 0..height {
+						c.put_pixel(x, y, im::Rgba([255, 255, 255, 255]));
+					}
+				}
 			}
 		}
 	}
@@ -70,6 +89,6 @@ impl GameCanvas {
 		
 		clear([1.0; 4], g);
 
-		image(&self.texture, c.transform.scale(4.0, 4.0), g);
+		image(&self.texture, c.transform.scale(8.0, 8.0), g);
 	}
 }

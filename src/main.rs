@@ -1,7 +1,6 @@
 extern crate piston_window;
 extern crate image as im;
 
-mod text_util;
 mod game;
 mod message;
 mod canvas;
@@ -14,10 +13,11 @@ fn main() {
 	let size = 100;
     let mut window: PistonWindow = WindowSettings::new(
 		"piston: hello_world",
-		[size * 4; 2]
+		[size * 8; 2]
 	)
 	.exit_on_esc(true)
 	.graphics_api(OpenGL::V4_1)
+	.resizable(false)
 	.build()
 	.unwrap();
 
@@ -28,7 +28,6 @@ fn main() {
 	let mut canvas = GameCanvas::new(&mut window, size, size);
 	
 	let game = Game::new(canvas.op_sender.clone());
-	println!("connected");
 
     while let Some(e) = window.next() {
         if e.render_args().is_some() {
