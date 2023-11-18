@@ -343,11 +343,14 @@ impl Player for Guesser {
 	}
 }
 
-struct WaitingPlayer {}
+struct WaitingPlayer {
+	address: String,
+}
 
 impl Player for WaitingPlayer {
 	fn render(self: &Self, font: &mut Text, glyphs: &mut Glyphs<'_>, c: Context, g: &mut G2d, _device: &mut gfx_device_gl::Device) {
-		center_text(font, glyphs, "Connecting...", 400.0, 50.0, c, g);
+		center_text(font, glyphs, "Waiting for Connection...", 400.0, 150.0, c, g);
+		center_text(font, glyphs, &self.address, 400.0, 250.0, c, g);
 	}
 
 	fn process_action(self: &Self, _communications: &mut Communications, _action: GameAction) -> Option<Box<dyn Player + Send>> { None }
@@ -380,10 +383,18 @@ enum KeyboardButtonType {
 
 impl Game {
 	pub fn new(canvas_op_sender: Sender<CanvasOperation>) -> Arc<Mutex<Self>> {
+		let args: Vec<String> = env::args().collect();
+		if args.len() < 2 {
+			panic!("Not enough arguments provided (usage: address [is_host]")
+		}
+
+		let address = args[1].clone();
+		let hosting = args.len() > 2;
+
 		let (sender, receiver) = channel();
 		let this = Arc::new(Mutex::new(Game {
 			communications: None,
-			role: Box::new(WaitingPlayer {}),
+			role: Box::new(WaitingPlayer { address: address.clone() }),
 			event_state: EventState {
 				left_mouse_down: false,
 				right_mouse_down: false,
@@ -392,14 +403,10 @@ impl Game {
 
 		let connection_thread_ref = this.clone();
 		thread::spawn(move || {
-			let args: Vec<String> = env::args().collect();
-			let (stream, role): (TcpStream, Box<dyn Player + Send>) = if args.len() >= 2 {
-				let ip = args.get(1).unwrap();
-				println!("connecting to {}...", ip);
-				(TcpStream::connect(ip).unwrap(), Box::new(Guesser::new()))
+			let (stream, role): (TcpStream, Box<dyn Player + Send>) = if hosting {
+				(TcpListener::bind(address).unwrap().accept().unwrap().0, Box::new(Drawer::new()))
 			} else {
-				println!("waiting for connection...");
-				(TcpListener::bind("127.0.0.1:4912").unwrap().accept().unwrap().0, Box::new(Drawer::new()))
+				(TcpStream::connect(address).unwrap(), Box::new(Guesser::new()))
 			};
 			
 			let action_sender = sender.clone();
