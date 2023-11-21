@@ -2,7 +2,6 @@ extern crate piston_window;
 extern crate image as im;
 
 mod game;
-mod message;
 mod canvas;
 
 use piston_window::*;
