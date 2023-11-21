@@ -26,10 +26,23 @@ impl Player for WaitingPlayer {
 		match action {
 			GameAction::LeftClick(x, y) => {
 				communications.send_action(GameAction::Draw(x, y));
-				None
 			},
 
-			_ => None
-		}
+			GameAction::RightClick(x, y) => {
+				communications.send_action(GameAction::Erase(x, y));
+			},
+
+			GameAction::LeftClickDrag(x1, y1, x2, y2) => {
+				communications.send_action(GameAction::DrawLine(x1, y1, x2, y2));
+			},
+
+			GameAction::RightClickDrag(x1, y1, x2, y2) => {
+				communications.send_action(GameAction::EraseLine(x1, y1, x2, y2));
+			},
+
+			_ => {}
+		};
+
+		None
 	}
 }

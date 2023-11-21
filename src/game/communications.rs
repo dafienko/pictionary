@@ -118,19 +118,19 @@ impl Communications {
 	fn process_keyboard_button_event(&mut self, keyboard_button_type: KeyboardButtonType) {
 		match keyboard_button_type {
 			KeyboardButtonType::Letter(char) => {
-				self.action_sender.send(GameAction::TypeLetter(char)).unwrap();
+				self.send_action(GameAction::TypeLetter(char));
 			},
 
 			KeyboardButtonType::Number(num) => {
-				self.action_sender.send(GameAction::TypeNumber(num)).unwrap();
+				self.send_action(GameAction::TypeNumber(num));
 			},
 
 			KeyboardButtonType::Enter => {
-				self.action_sender.send(GameAction::Enter).unwrap();
+				self.send_action(GameAction::Enter);
 			},
 
 			KeyboardButtonType::Backspace => {
-				self.action_sender.send(GameAction::DeleteLetter).unwrap();
+				self.send_action(GameAction::DeleteLetter);
 			},
 
 			_ => {}
@@ -176,9 +176,19 @@ impl Communications {
 
 	pub fn process_event(&mut self, e: Event) {
 		if let Some(p) = e.mouse_cursor_args() {
-			let p = ((p[0] as u32) / 8, (p[1] as u32) / 8);
-			self.event_state.last_mouse_pos = self.event_state.current_mouse_pos;
-			self.event_state.current_mouse_pos = p;
+			let l = self.event_state.current_mouse_pos;
+			let c = ((p[0] as u32) / 8, (p[1] as u32) / 8);
+
+			self.event_state.last_mouse_pos = l;
+			self.event_state.current_mouse_pos = c;
+
+			if self.event_state.left_mouse_down {
+				self.send_action(GameAction::LeftClickDrag(l.0, l.1, c.0, c.1));
+			}
+
+			if self.event_state.right_mouse_down {
+				self.send_action(GameAction::RightClickDrag(l.0, l.1, c.0, c.1));
+			}
 		}
 
 		match e {

@@ -106,6 +106,18 @@ impl Player for Drawer {
 						None
 					},
 
+					GameAction::LeftClickDrag(x1, y1, x2, y2) => {
+						communications.send_message(GameMessage::DrawLine(x1, y1, x2, y2));
+						communications.send_action(GameAction::DrawLine(x1, y1, x2, y2));
+						None
+					},
+		
+					GameAction::RightClickDrag(x1, y1, x2, y2) => {
+						communications.send_message(GameMessage::EraseLine(x1, y1, x2, y2));
+						communications.send_action(GameAction::EraseLine(x1, y1, x2, y2));
+						None
+					},
+
 					GameAction::Update(dt) => {
 						let cdt = cdt + dt;
 						if cdt > 1.0 {

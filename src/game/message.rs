@@ -10,6 +10,8 @@ const MESSAGE_DATA_SIZE: &'static [usize] = &[
 	4, // game over
 	0, // swap roles
 	8, // erase
+	16, // draw line
+	16, // erase line
 ];
 
 pub enum GameMessage {
@@ -21,6 +23,8 @@ pub enum GameMessage {
 	GameOver(String),
 	SwapRoles,
 	Erase(u32, u32),
+	DrawLine(u32, u32, u32, u32),
+	EraseLine(u32, u32, u32, u32),
 }
 
 pub fn parse_game_message(stream: &mut TcpStream) -> GameMessage {
@@ -80,6 +84,20 @@ pub fn parse_game_message(stream: &mut TcpStream) -> GameMessage {
 			u32_from_bytes(&bytes[4..8])
 		),
 
+		8 => GameMessage::DrawLine(
+			u32_from_bytes(&bytes[0..4]), 
+			u32_from_bytes(&bytes[4..8]),
+			u32_from_bytes(&bytes[8..12]),
+			u32_from_bytes(&bytes[12..16])
+		),
+
+		9 => GameMessage::EraseLine(
+			u32_from_bytes(&bytes[0..4]), 
+			u32_from_bytes(&bytes[4..8]),
+			u32_from_bytes(&bytes[8..12]),
+			u32_from_bytes(&bytes[12..16])
+		),
+
 		_ => panic!()
 	}
 }
@@ -95,6 +113,8 @@ impl GameMessage {
 			GameMessage::GameOver(_) => 5,
 			GameMessage::SwapRoles => 6,
 			GameMessage::Erase(_, _) => 7,
+			GameMessage::DrawLine(_, _, _, _) => 8,
+			GameMessage::EraseLine(_, _, _, _) => 9,
 		}
 	}
 
@@ -145,6 +165,18 @@ impl GameMessage {
 
 			GameMessage::Erase(x, y) => {
 				for v in [x, y] {
+					push_u32(&mut bytes, *v);
+				}
+			},
+
+			GameMessage::DrawLine(x1, y1, x2, y2) => {
+				for v in [x1, y1, x2, y2] {
+					push_u32(&mut bytes, *v);
+				}
+			},
+
+			GameMessage::EraseLine(x1, y1, x2, y2) => {
+				for v in [x1, y1, x2, y2] {
 					push_u32(&mut bytes, *v);
 				}
 			},

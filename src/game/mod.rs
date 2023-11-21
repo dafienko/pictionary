@@ -48,12 +48,14 @@ impl Game {
 				(TcpStream::connect(address).unwrap(), Box::new(Guesser::new()))
 			};
 			
-			let action_sender = sender.clone();
 			let mut reader = stream.try_clone().unwrap();
-			connection_thread_ref.lock().unwrap().communications.set_stream(stream);
-
-			connection_thread_ref.lock().unwrap().role = role;
-
+			
+			let mut this = connection_thread_ref.lock().unwrap();
+			this.communications.set_stream(stream);
+			this.communications.send_canvas_op(CanvasOperation::Clear);
+			this.role = role;
+			
+			let action_sender = sender.clone();
 			thread::spawn(move || {
 				loop {
 					let message = parse_game_message(&mut reader);
@@ -83,6 +85,8 @@ impl Game {
 			GameMessage::GameOver(word) => GameAction::GameOver(word),
 			GameMessage::SwapRoles => GameAction::SwapRoles,
 			GameMessage::Erase(x, y) => GameAction::Erase(x, y),
+			GameMessage::DrawLine(x1, y1, x2, y2) => GameAction::DrawLine(x1, y1, x2, y2),
+			GameMessage::EraseLine(x1, y1, x2, y2) => GameAction::EraseLine(x1, y1, x2, y2),
 		}
 	}
 
@@ -98,7 +102,16 @@ impl Game {
 
 			GameAction::SwapRoles => {
 				self.communications.send_canvas_op(CanvasOperation::Clear);
-			}
+			},
+
+			GameAction::DrawLine(x1, y1, x2, y2) => {
+				self.communications.send_canvas_op(CanvasOperation::Line(x1, y1, x2, y2, 0, 0, 255));
+			},
+
+			GameAction::EraseLine(x1, y1, x2, y2) => {
+				self.communications.send_canvas_op(CanvasOperation::EraseLine(x1, y1, x2, y2));
+			},
+
 			_ => {}
 		};
 		

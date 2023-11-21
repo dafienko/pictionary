@@ -10,8 +10,25 @@ use im::Rgba;
 
 pub enum CanvasOperation {
 	Pixel(u32, u32, u8, u8, u8),
+	Line(u32, u32, u32, u32, u8, u8, u8),
 	Erase(u32, u32),
+	EraseLine(u32, u32, u32, u32),
 	Clear,
+}
+
+fn line<F>(x1: f64, y1: f64, x2: f64, y2: f64, mut func: F) where F: FnMut(i32, i32) {
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let mut steps = dx.abs();
+	if dy.abs() > steps { steps = dy.abs() };
+
+    let x_inc = dx / steps;
+    let y_inc = dy / steps;
+
+    for i in 0..steps.ceil() as i32 {
+		let i = i as f64;
+		func((x1 + x_inc * i).round() as i32, (y1 + y_inc * i).round() as i32);
+	}
 }
 
 pub struct GameCanvas {
@@ -55,19 +72,29 @@ impl GameCanvas {
 		}
 	}
 
+	fn erase(c: &mut im::ImageBuffer<Rgba<u8>, Vec<u8>>, x: u32, y: u32, width: u32, height: u32) {
+		let s = 2;
+		for x in cmp::max(0, x - s)..cmp::min(x + s + 1, width) {
+			for y in cmp::max(0, y - 1)..cmp::min(y + 2, height) {
+				c.put_pixel(x, y, im::Rgba([255, 255, 255, 255]));
+			}
+		}
+	}
+
+	fn draw(c: &mut im::ImageBuffer<Rgba<u8>, Vec<u8>>, x: u32, y: u32, width: u32, height: u32, r: u8, g: u8, b: u8) {
+		if x < width && y < height {
+			c.put_pixel(x, y, im::Rgba([r, g, b, 255]));
+		}
+	}
+
 	fn process_operation(c: &mut im::ImageBuffer<Rgba<u8>, Vec<u8>>, width: u32, height: u32, operation: CanvasOperation) {
 		match operation {
 			CanvasOperation::Pixel(x, y, r, g, b) => {
-				c.put_pixel(x, y, im::Rgba([r, g, b, 255]));
+				Self::draw(c, x, y, width, height, r, g, b);
 			},
 
 			CanvasOperation::Erase(x, y) => {
-				let s = 2;
-				for x in cmp::max(0, x - s)..cmp::min(x + s + 1, width) {
-					for y in cmp::max(0, y - 1)..cmp::min(y + 2, height) {
-						c.put_pixel(x, y, im::Rgba([255, 255, 255, 255]));
-					}
-				}
+				Self::erase(c, x, y, width, height);
 			},
 
 			CanvasOperation::Clear => {
@@ -76,6 +103,18 @@ impl GameCanvas {
 						c.put_pixel(x, y, im::Rgba([255, 255, 255, 255]));
 					}
 				}
+			},
+
+			CanvasOperation::Line(x1, y1, x2, y2, r, g, b) => {
+				line(x1 as f64, y1 as f64, x2 as f64, y2 as f64, move |x, y| {
+					Self::draw(c, x as u32, y as u32, width, height, r, g, b);
+				});
+			},
+
+			CanvasOperation::EraseLine(x1, y1, x2, y2) => {
+				line(x1 as f64, y1 as f64, x2 as f64, y2 as f64, move |x, y| {
+					Self::erase(c, x as u32, y as u32, width, height);
+				});
 			}
 		}
 	}
