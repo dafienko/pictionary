@@ -11,7 +11,7 @@ use crate::game::Game;
 fn main() {
 	let size = 100;
     let mut window: PistonWindow = WindowSettings::new(
-		"piston: hello_world",
+		"Pictionary",
 		[size * 8; 2]
 	)
 	.exit_on_esc(true)
